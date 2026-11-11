@@ -1,5 +1,11 @@
 # AGENTS.md — Project Conventions for new-api
 
+## Fork maintenance account
+
+- This fork is maintained under `topway-ai` at `https://github.com/topway-ai/new-api`; `main` is the maintenance branch.
+- Use the `topway-ai` GitHub connection for this fork's repository writes, releases, and repository administration. Deployment credentials must belong to this project or be explicitly authorized by `topway-ai`.
+- Do not restore access or deployment dependencies for a previous repository owner. Keep upstream New API and QuantumNous attribution intact.
+
 DO NOT send optional commentary
 
 ## Overview
