@@ -33,6 +33,7 @@ type oauthFlowPayload struct {
 	AffiliateCode   string                         `json:"affiliate_code,omitempty"`
 	Verification    *service.OAuthVerificationFlow `json:"verification,omitempty"`
 	Telegram        *oauth.TelegramOAuthFlow       `json:"telegram,omitempty"`
+	OIDC            *oauth.OIDCFlow                `json:"oidc,omitempty"`
 	SessionIdentity *service.AuthIdentity          `json:"session_identity,omitempty"`
 	Authorization   *model.AuthFlowAuthorization   `json:"authorization,omitempty"`
 }
@@ -63,6 +64,14 @@ func GenerateOAuthCode(c *gin.Context) {
 	userID := 0
 	sessionID := ""
 	flowPayload := oauthFlowPayload{AffiliateCode: request.Aff}
+	if request.Provider == "oidc" {
+		flow, err := oauth.NewOIDCFlow()
+		if err != nil {
+			handleOAuthError(c, err)
+			return
+		}
+		flowPayload.OIDC = flow
+	}
 	bindingStarted := false
 	if request.Provider == "telegram" {
 		telegramFlow, err := oauth.NewTelegramOAuthFlow()
@@ -134,6 +143,10 @@ func GenerateOAuthCode(c *gin.Context) {
 	data := gin.H{"flow_token": state, "expires_at": expiresAt.Unix()}
 	if flowPayload.Telegram != nil {
 		data["authorization_url"] = flowPayload.Telegram.AuthorizationURL(state)
+	}
+	if flowPayload.OIDC != nil {
+		flowPayload.OIDC.SetBrowserCookie(c, state, int(oauthAuthFlowTTL.Seconds()))
+		data["authorization_url"] = flowPayload.OIDC.AuthorizationURL(state)
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -230,6 +243,15 @@ func HandleOAuth(c *gin.Context) {
 	if !provider.IsEnabled() {
 		common.ApiErrorT(c, "{{provider}} login and registration has not been enabled by administrator", providerParams(provider.GetName()))
 		return
+	}
+	if providerName == "oidc" {
+		var payload oauthFlowPayload
+		if err := common.UnmarshalJsonStr(pendingFlow.Payload, &payload); err != nil || payload.OIDC == nil || !payload.OIDC.MatchesBrowser(c, state) {
+			writeAccountStatusError(c, http.StatusForbidden, "State parameter is empty or mismatched")
+			return
+		}
+		c.Set(oauth.OIDCFlowContextKey, payload.OIDC)
+		payload.OIDC.SetBrowserCookie(c, state, -1)
 	}
 
 	// 4. Handle error from provider

@@ -30,6 +30,59 @@ import { consumeOAuthLoginRedirect } from './lib/oauth-callback-mode'
 afterEach(() => vi.restoreAllMocks())
 
 test.each([true, false])(
+  'OIDC login uses the server PKCE URL and rejects a missing URL: %s',
+  async (hasAuthorizationUrl) => {
+    vi.spyOn(window, 'localStorage', 'get').mockReturnValue(
+      window.sessionStorage
+    )
+    window.sessionStorage.clear()
+    const authorizationUrl =
+      'https://accounts.topway.ai/api/auth/oauth2/authorize?code_challenge=test&code_challenge_method=S256'
+    vi.spyOn(api, 'post').mockImplementation(async (url) => {
+      if (url === '/api/user/auth/logout') return { data: { success: true } }
+      if (url === '/api/oauth/state') {
+        return {
+          data: {
+            success: true,
+            data: {
+              flow_token: 'oidc-state',
+              authorization_url: hasAuthorizationUrl
+                ? authorizationUrl
+                : undefined,
+            },
+          },
+        }
+      }
+      throw new Error(`Unexpected POST ${url}`)
+    })
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    const error = vi.spyOn(toast, 'error')
+    const { result } = renderHook(() =>
+      useOAuthLogin(
+        {
+          oidc_enabled: true,
+          oidc_client_id: 'new-api-web',
+          oidc_authorization_endpoint:
+            'https://accounts.topway.ai/api/auth/oauth2/authorize',
+        },
+        '/dashboard/overview'
+      )
+    )
+    await act(() => result.current.handleOIDCLogin())
+    if (hasAuthorizationUrl) {
+      expect(open).toHaveBeenCalledWith(authorizationUrl, '_self')
+      expect(consumeOAuthLoginRedirect('oidc-state')).toBe(
+        '/dashboard/overview'
+      )
+    } else {
+      expect(open).not.toHaveBeenCalled()
+      expect(error).toHaveBeenCalled()
+    }
+    window.sessionStorage.clear()
+  }
+)
+
+test.each([true, false])(
   'starts Telegram OAuth only when configuration is ready: %s',
   async (configured) => {
     vi.spyOn(window, 'localStorage', 'get').mockReturnValue(
